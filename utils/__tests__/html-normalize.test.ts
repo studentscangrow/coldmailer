@@ -1,3 +1,7 @@
+// @vitest-environment jsdom
+// dompurify needs a real DOM (window) to sanitize anything — under the default node
+// environment it silently no-ops and returns input unchanged, which made every test here
+// pass a value through unsanitized instead of exercising sanitizeHtml at all.
 import { describe, it, expect } from 'vitest'
 import { sanitizeHtml, normalizeHtml, sanitizeAndNormalizeHtml } from '../html-normalize'
 
