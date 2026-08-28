@@ -1,9 +1,16 @@
 import { prisma } from '~/server/utils/prisma'
 import { requireAuth } from '~/server/utils/requireAuth'
+import { canManagePartnersGlobally } from '~/server/utils/projectPermissions'
 
 export default defineEventHandler(async (event) => {
-  await requireAuth(event)
+  const session = await requireAuth(event)
   const id = getRouterParam(event, 'id')!
+
+  // Deleting a GlobalRecord is permanent and cascades across every project it's in — restrict
+  // to admin / Vedení obchodu, unlike most partner actions which any authenticated user can do.
+  if (!(await canManagePartnersGlobally(session.id))) {
+    throw createError({ statusCode: 403, message: 'Smazání partnera je dostupné jen pro vedení obchodu a administrátory.' })
+  }
 
   const existing = await prisma.globalRecord.findUnique({ where: { id }, select: { id: true, type: true } })
   if (!existing) throw createError({ statusCode: 404, message: 'Partner nenalezen.' })

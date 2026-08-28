@@ -42,6 +42,19 @@ export async function canManagePipeline(userId: string, projectId: string): Prom
   return perms.includes('project.pipeline.manage')
 }
 
+// Project-agnostic version of canManagePipeline, for actions that aren't scoped to one project
+// (e.g. deleting a GlobalRecord, which cascades across every project it's in) — true for admins
+// and anyone who holds the "Vedení obchodu" role (project.pipeline.manage) in ANY project.
+export async function canManagePartnersGlobally(userId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } })
+  if (user?.isAdmin) return true
+  const anyRole = await prisma.userProjectRole.findFirst({
+    where: { userId, projectRole: { permissions: { has: 'project.pipeline.manage' } } },
+    select: { userId: true },
+  })
+  return !!anyRole
+}
+
 export async function getInteractionAccess(userId: string, projectId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },

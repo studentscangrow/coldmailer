@@ -7,6 +7,7 @@ const props = defineProps<{
   mode: 'create' | 'edit'
   partner?: { id: string; canonicalName: string; payload: Record<string, unknown>; contacts?: PartnerContact[] }
   duplicateBehavior?: 'show-error' | 'use-existing'
+  canDelete?: boolean
 }>()
 const emit = defineEmits<{ close: []; saved: [{ id: string }]; deleted: [] }>()
 
@@ -466,7 +467,7 @@ async function save() {
         <!-- Footer -->
         <div class="flex items-center justify-between gap-3 px-6 py-4 border-t border-gray-100">
           <button
-            v-if="mode === 'edit'"
+            v-if="mode === 'edit' && canDelete"
             class="text-sm text-red-600 hover:text-red-800 px-4 py-2 transition-colors disabled:opacity-50"
             :disabled="deleting || saving"
             @click="deletePartner"
