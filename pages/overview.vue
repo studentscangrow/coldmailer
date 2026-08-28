@@ -20,7 +20,7 @@ interface OverviewPartner {
   lastActivityAt: string | null
 }
 
-const includeUncertain = ref(false)
+const includeUncertain = ref(true)
 
 const { data, pending, error } = await useFetch<{ partners: OverviewPartner[] }>('/api/partners/overview', {
   query: computed(() => ({ includeUncertain: includeUncertain.value ? 'true' : 'false' })),
