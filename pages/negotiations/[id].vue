@@ -109,19 +109,26 @@ async function refresh() {
 const toast = useToast()
 
 // ── Live sync ─────────────────────────────────────────────────────────────────
-// Poll the timeline so notes/emails added by other users while this page is
-// open show up without a manual refresh. Optimistic local mutations
+// Poll the timeline and negotiation status so changes made by other users while
+// this page is open show up without a manual refresh. Optimistic local mutations
 // (toggleCheckItem, toggleTodoLine, toggleEvent) bump mutationInFlight around
 // their request so an in-flight poll never overwrites interactionsData with
 // stale pre-mutation data — the result is simply dropped and picked up by the
-// next tick instead.
+// next tick instead. Status/assignees have no local optimistic mutation to race
+// (updateStatus always waits for the request then re-fetches), so that half of
+// the poll isn't gated on mutationInFlight.
 const mutationInFlight = ref(0)
 let interactionsSyncInterval: ReturnType<typeof setInterval> | undefined
 
 async function pollInteractions() {
-  if (document.hidden || mutationInFlight.value > 0) return
-  const fresh = await $fetch<TimelineResponse>(`/api/partners/${id}/timeline`).catch(() => null)
-  if (fresh && mutationInFlight.value === 0) interactionsData.value = fresh
+  if (document.hidden) return
+  const partnerPromise = $fetch<Partner>(`/api/partners/${id}`).catch(() => null)
+  if (mutationInFlight.value === 0) {
+    const fresh = await $fetch<TimelineResponse>(`/api/partners/${id}/timeline`).catch(() => null)
+    if (fresh && mutationInFlight.value === 0) interactionsData.value = fresh
+  }
+  const freshPartner = await partnerPromise
+  if (freshPartner) partner.value = freshPartner
 }
 
 onMounted(() => {
