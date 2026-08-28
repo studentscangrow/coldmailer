@@ -66,7 +66,7 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
     'search_partners',
     {
       title: 'Vyhledat partnery',
-      description: 'Vyhledá partnery (GlobalRecord typu PARTNER) podle jména/obsahu. Volitelně omezí na jeden projekt a přidá stav jednání v něm.',
+      description: 'Vyhledá partnery (GlobalRecord typu PARTNER) podle jména/obsahu. Volitelně omezí na jeden projekt a přidá stav jednání a jistotu domluvy (dealConfidence) v něm.',
       inputSchema: {
         query: z.string().optional().describe('Hledaný text (jméno nebo obsah profilu). Prázdné = prvních `limit` partnerů abecedně.'),
         projectId: z.string().optional().describe('Pokud je zadán, u výsledků se přidá negotiationStatus a hasNegotiation v tomto projektu.'),
@@ -94,7 +94,7 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
           id: true,
           canonicalName: true,
           payload: true,
-          negotiations: projectId ? { where: { projectId }, select: { negotiationStatus: true } } : false,
+          negotiations: projectId ? { where: { projectId }, select: { negotiationStatus: true, dealConfidence: true } } : false,
         },
         orderBy: { canonicalName: 'asc' },
         take: limit,
@@ -110,6 +110,7 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
           ...(projectId && {
             hasNegotiation: !!negotiation,
             negotiationStatus: negotiation?.negotiationStatus ?? null,
+            dealConfidence: negotiation?.dealConfidence ?? null,
           }),
         }
       }))
@@ -120,7 +121,7 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
     'get_negotiation',
     {
       title: 'Detail jednání',
-      description: 'Kompletní detail jednoho partnera v rámci projektu: kontakty, stav, obsah plnění, to-do, celá časová osa e-mailů a poznámek, a role uživatelů (oslovovatel, vyjednavači, plnitelé).',
+      description: 'Kompletní detail jednoho partnera v rámci projektu: kontakty, stav, jistota domluvy (dealConfidence), odkazy na Discord vlákno a Google Doc s návrhem plnění, obsah plnění, to-do, celá časová osa e-mailů a poznámek, a role uživatelů (oslovovatel, vyjednavači, plnitelé).',
       inputSchema: {
         globalRecordId: z.string(),
         projectId: z.string(),
@@ -151,7 +152,10 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
         payload: header.payload,
         contacts: header.contacts,
         negotiationStatus: header.negotiationStatus,
+        dealConfidence: header.dealConfidence,
+        discordThreadUrl: header.discordThreadUrl,
         fulfillment: timeline.fulfillment,
+        fulfillmentDocUrl: timeline.fulfillmentDocUrl,
         todoList: timeline.todoList,
         lastActivityAt,
         roles: {
@@ -170,7 +174,7 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
     'get_pipeline_overview',
     {
       title: 'Přehled pipeline',
-      description: 'Souhrnná čísla za projekt: počet partnerů/jednání, rozpad podle stavu jednání (syrový, bez interpretace "nadějnosti"), počet odeslaných e-mailů a nových poznámek od zadaného data.',
+      description: 'Souhrnná čísla za projekt: počet partnerů/jednání, rozpad podle stavu jednání (syrový, bez interpretace "nadějnosti"), rozpad podle jistoty domluvy (dealConfidence — Domluveno/Možná/bez hodnoty), počet odeslaných e-mailů a nových poznámek od zadaného data.',
       inputSchema: {
         projectId: z.string(),
         since: z.string().datetime().optional().describe('ISO datum — pokud zadáno, počty e-mailů/poznámek se počítají jen od tohoto data.'),
@@ -180,10 +184,15 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
       await assertProjectAccess(ctx, projectId)
       const sinceDate = since ? new Date(since) : undefined
 
-      const [totalNegotiations, statusBreakdown, emailsSent, newNotes] = await Promise.all([
+      const [totalNegotiations, statusBreakdown, dealConfidenceBreakdown, emailsSent, newNotes] = await Promise.all([
         prisma.negotiation.count({ where: { projectId, removedAt: null } }),
         prisma.negotiation.groupBy({
           by: ['negotiationStatus'],
+          where: { projectId, removedAt: null },
+          _count: true,
+        }),
+        prisma.negotiation.groupBy({
+          by: ['dealConfidence'],
           where: { projectId, removedAt: null },
           _count: true,
         }),
@@ -198,6 +207,7 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
       return textResult({
         totalPartnersInProject: totalNegotiations,
         statusBreakdown: statusBreakdown.map(s => ({ status: s.negotiationStatus, count: s._count })),
+        dealConfidenceBreakdown: dealConfidenceBreakdown.map(d => ({ dealConfidence: d.dealConfidence, count: d._count })),
         emailsSent,
         newNotes,
         since: since ?? null,
