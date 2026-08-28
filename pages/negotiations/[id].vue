@@ -55,6 +55,7 @@ interface CrossProjectMeta {
 interface TimelineResponse {
   items: Interaction[]
   fulfillment: { myToThem: string | null; themToUs: string | null }
+  fulfillmentDocUrl: string | null
   todoList: string | null
   crossProjectSummary: CrossProjectMeta[]
   access: { canViewAll: boolean; canEditAll: boolean; canEdit: boolean; canManageAssignees: boolean }
@@ -64,6 +65,7 @@ interface Partner {
   contacts: Contact[]
   assignees: AssigneeUser[]
   negotiationStatus: 'CONTACTED' | 'REMINDED' | 'WAITING_FOR_THEM' | 'WAITING_FOR_US' | 'PRED_SCHUZKOU' | 'FULFILLING' | 'THANKS_REMAINING' | 'COMPLETED' | 'NOT_INTERESTED' | 'NOT_THIS_TIME' | null
+  discordThreadUrl: string | null
 }
 interface AppUser { id: string; name: string; image: string | null; email: string }
 
@@ -140,8 +142,7 @@ onUnmounted(() => {
 
 // ── UI state ──────────────────────────────────────────────────────────────────
 
-const showProfileModal = ref(false)
-const showEditModal = ref(false)
+const showDetailModal = ref(false)
 const expandedEvents = ref(new Set<string>())
 const showCrossProject = ref(false)
 
@@ -270,6 +271,28 @@ async function saveFulfillmentField() {
     body: { [field]: normalized },
   })
   toast.show('Obsah plnění uložen', 'success')
+  await refreshInteractions()
+}
+
+const fulfillmentDocUrl = computed(() => interactionsData.value?.fulfillmentDocUrl ?? null)
+const editingFulfillmentDoc = ref(false)
+const fulfillmentDocUrlValue = ref('')
+const fulfillmentDocInput = ref<HTMLInputElement | null>(null)
+
+function startFulfillmentDocEdit() {
+  fulfillmentDocUrlValue.value = fulfillmentDocUrl.value ?? ''
+  editingFulfillmentDoc.value = true
+  nextTick(() => fulfillmentDocInput.value?.focus())
+}
+
+async function saveFulfillmentDocUrl() {
+  if (!editingFulfillmentDoc.value) return
+  editingFulfillmentDoc.value = false
+  await $fetch(`/api/partners/${id}/negotiation/fulfillment-doc`, {
+    method: 'PATCH',
+    body: { fulfillmentDocUrl: fulfillmentDocUrlValue.value.trim() || null },
+  })
+  toast.show('Odkaz na plnění uložen', 'success')
   await refreshInteractions()
 }
 
@@ -552,8 +575,7 @@ const TYPE_LABELS: Record<string, string> = {
       :all-users="allUsers ?? []"
       @synced="refreshInteractions(); refreshPartner()"
       @partner-changed="refreshPartner()"
-      @open-profile="showProfileModal = true"
-      @open-edit="showEditModal = true"
+      @open-detail="showDetailModal = true"
     />
 
     <!-- ── Last activity + reminder ── -->
@@ -640,6 +662,38 @@ const TYPE_LABELS: Record<string, string> = {
       @cancel="newMode = null"
       @created="newMode = null; refresh()"
     />
+
+    <!-- ── Odkaz na návrh plnění (Google Doc) ── -->
+    <div v-if="typeFilter === 'FULFILLMENT'" class="mb-3 flex items-center gap-2">
+      <input
+        v-if="editingFulfillmentDoc"
+        ref="fulfillmentDocInput"
+        v-model="fulfillmentDocUrlValue"
+        type="url"
+        placeholder="https://docs.google.com/..."
+        class="text-xs px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-300 w-80"
+        @keydown.enter="saveFulfillmentDocUrl"
+        @keydown.escape="editingFulfillmentDoc = false"
+        @blur="saveFulfillmentDocUrl"
+      />
+      <template v-else-if="fulfillmentDocUrl">
+        <a
+          :href="fulfillmentDocUrl"
+          target="_blank"
+          rel="noopener"
+          class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
+        >
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+          Návrh plnění ↗
+        </a>
+        <button v-if="canEdit" class="text-[10px] text-gray-400 hover:text-indigo-600 transition-colors" @click="startFulfillmentDocEdit">✏️</button>
+      </template>
+      <button
+        v-else-if="canEdit"
+        class="text-xs text-gray-400 hover:text-indigo-500 transition-colors"
+        @click="startFulfillmentDocEdit"
+      >+ Odkaz na plnění</button>
+    </div>
 
     <!-- ── Fulfillment checklist (jedna na jednání, mimo seznam interakcí) ── -->
     <div v-if="typeFilter === 'FULFILLMENT'" class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
@@ -764,28 +818,16 @@ const TYPE_LABELS: Record<string, string> = {
       />
     </div>
 
-    <!-- ── Profile modal ── -->
-    <div v-if="showProfileModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" @click.self="showProfileModal = false">
-      <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] flex flex-col">
-        <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 class="font-semibold text-gray-800">Profil partnera</h2>
-          <button class="text-gray-400 hover:text-gray-600 text-xl leading-none" @click="showProfileModal = false">×</button>
-        </div>
-        <div class="overflow-y-auto p-6 flex-1">
-          <p class="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{{ partner.payload.description }}</p>
-        </div>
-      </div>
-    </div>
   </div>
 
   <div v-else class="text-center py-16 text-gray-400 text-sm">Načítám...</div>
 
-  <PartnersPartnerFormModal
-    v-if="showEditModal && partner"
-    mode="edit"
-    :partner="{ id: partner.id, canonicalName: partner.canonicalName, payload: partner.payload, contacts: partner.contacts }"
-    @close="showEditModal = false"
-    @saved="showEditModal = false; refreshPartner()"
+  <NegotiationsPartnerDetailModal
+    v-if="showDetailModal && partner"
+    :canonical-name="partner.canonicalName"
+    :payload="partner.payload"
+    :contacts="partner.contacts"
+    @close="showDetailModal = false"
   />
 
   <NegotiationsEmailComposer

@@ -3,11 +3,17 @@ import { NEGOTIATION_STATUS_LABELS, NEGOTIATION_STATUS_COLORS, EDITABLE_NEGOTIAT
 
 interface AssigneeUser { id: string; name: string; image: string | null }
 interface AppUser { id: string; name: string; image: string | null; email: string }
+interface Contact {
+  id: string; address: string | null; firstName: string | null; lastName: string | null
+  role: string | null; contactType: string | null; note: string | null; priority: number
+}
 interface Partner {
   canonicalName: string
   payload: Record<string, string>
+  contacts: Contact[]
   assignees: AssigneeUser[]
   negotiationStatus: 'CONTACTED' | 'REMINDED' | 'WAITING_FOR_THEM' | 'WAITING_FOR_US' | 'PRED_SCHUZKOU' | 'FULFILLING' | 'THANKS_REMAINING' | 'COMPLETED' | 'NOT_INTERESTED' | 'NOT_THIS_TIME' | null
+  discordThreadUrl: string | null
 }
 
 const props = defineProps<{
@@ -21,8 +27,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   synced: []
   'partner-changed': []
-  'open-profile': []
-  'open-edit': []
+  'open-detail': []
 }>()
 
 const toast = useToast()
@@ -120,6 +125,29 @@ async function removeSolutionAssignee(userId: string) {
   toast.show('Řešitel odebrán', 'success')
   emit('partner-changed')
 }
+
+// ── Discord thread ───────────────────────────────────────────────────────────
+
+const editingDiscordUrl = ref(false)
+const discordUrlValue = ref('')
+const discordInput = ref<HTMLInputElement | null>(null)
+
+function startDiscordEdit() {
+  discordUrlValue.value = props.partner.discordThreadUrl ?? ''
+  editingDiscordUrl.value = true
+  nextTick(() => discordInput.value?.focus())
+}
+
+async function saveDiscordUrl() {
+  if (!editingDiscordUrl.value) return
+  editingDiscordUrl.value = false
+  await $fetch(`/api/partners/${props.globalRecordId}/negotiation/discord-thread`, {
+    method: 'PATCH',
+    body: { discordThreadUrl: discordUrlValue.value.trim() || null },
+  })
+  toast.show('Discord vlákno uloženo', 'success')
+  emit('partner-changed')
+}
 </script>
 
 <template>
@@ -195,19 +223,42 @@ async function removeSolutionAssignee(userId: string) {
             :class="['text-xs px-2 py-1 rounded font-medium', NEGOTIATION_STATUS_COLORS[partner.negotiationStatus] ?? 'bg-gray-100 text-gray-600']"
           >{{ NEGOTIATION_STATUS_LABELS[partner.negotiationStatus] }}</span>
         </div>
+        <!-- Discord vlákno -->
+        <div class="flex items-center gap-1">
+          <input
+            v-if="editingDiscordUrl"
+            ref="discordInput"
+            v-model="discordUrlValue"
+            type="url"
+            placeholder="https://discord.com/channels/..."
+            class="text-xs px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-300 w-56"
+            @keydown.enter="saveDiscordUrl"
+            @keydown.escape="editingDiscordUrl = false"
+            @blur="saveDiscordUrl"
+          />
+          <template v-else-if="partner.discordThreadUrl">
+            <a
+              :href="partner.discordThreadUrl"
+              target="_blank"
+              rel="noopener"
+              class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#5865F2] text-white hover:bg-[#4752C4] transition-colors"
+            >
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.522 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1568 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z" /></svg>
+              Discord vlákno
+            </a>
+            <button v-if="canEdit" class="text-[10px] text-gray-400 hover:text-indigo-600 transition-colors" @click="startDiscordEdit">✏️</button>
+          </template>
+          <button
+            v-else-if="canEdit"
+            class="text-xs text-gray-400 hover:text-indigo-500 transition-colors whitespace-nowrap"
+            @click="startDiscordEdit"
+          >+ Discord vlákno</button>
+        </div>
         <button
-          v-if="partner.payload.description"
           class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50 transition-colors"
-          @click="emit('open-profile')"
+          @click="emit('open-detail')"
         >
-          Profil
-        </button>
-        <button
-          v-if="canManageAssignees"
-          class="text-xs px-3 py-1.5 rounded-lg border border-indigo-200 text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-colors"
-          @click="emit('open-edit')"
-        >
-          Upravit profil
+          Detail
         </button>
       </div>
     </div>

@@ -490,6 +490,10 @@ model Negotiation {
   myToThem String?
   themToUs String?
 
+  // Odkaz na Google Doc s návrhem plnění a odkaz na Discord vlákno — obojí volitelné, 1:1 s jednáním
+  fulfillmentDocUrl String?
+  discordThreadUrl  String?
+
   // To-Do seznam – 1:1 s jednáním, markdown checklist s volitelným datem deadline
   todoList String?
 

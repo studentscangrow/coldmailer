@@ -55,7 +55,7 @@ export async function getPartnerHeader(globalRecordId: string, projectId: string
       },
       negotiations: {
         where: projectId ? { projectId } : undefined,
-        select: { negotiationStatus: true },
+        select: { negotiationStatus: true, discordThreadUrl: true },
       },
     },
   })
@@ -70,6 +70,7 @@ export async function getPartnerHeader(globalRecordId: string, projectId: string
   return {
     ...rest,
     negotiationStatus: negotiation?.negotiationStatus ?? null,
+    discordThreadUrl: negotiation?.discordThreadUrl ?? null,
     assignees,
     outreachAssignment,
   }
@@ -80,6 +81,7 @@ export async function getNegotiationTimeline(globalRecordId: string, projectId: 
     return {
       items: [] as any[],
       fulfillment: { myToThem: null, themToUs: null },
+      fulfillmentDocUrl: null as string | null,
       todoList: null as string | null,
       crossProjectSummary: [] as any[],
       access: { canViewAll: false, canEditAll: false, canEdit: false, canManageAssignees: false },
@@ -95,6 +97,7 @@ export async function getNegotiationTimeline(globalRecordId: string, projectId: 
     select: {
       myToThem: true,
       themToUs: true,
+      fulfillmentDocUrl: true,
       todoList: true,
       emails: { select: EMAIL_SELECT },
       notes: { select: NOTE_SELECT },
@@ -129,6 +132,7 @@ export async function getNegotiationTimeline(globalRecordId: string, projectId: 
   const fulfillment = canViewFull
     ? { myToThem: negotiation?.myToThem ?? null, themToUs: negotiation?.themToUs ?? null }
     : { myToThem: null, themToUs: null }
+  const fulfillmentDocUrl = canViewFull ? (negotiation?.fulfillmentDocUrl ?? null) : null
 
   const todoList = canViewFull ? (negotiation?.todoList ?? null) : null
 
@@ -202,6 +206,7 @@ export async function getNegotiationTimeline(globalRecordId: string, projectId: 
   return {
     items,
     fulfillment,
+    fulfillmentDocUrl,
     todoList,
     crossProjectSummary,
     access: {
