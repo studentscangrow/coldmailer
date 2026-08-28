@@ -47,6 +47,22 @@ model User {
   negotiationAssignments      NegotiationAssignee[]  @relation("NegotiationAssignee")
   negotiationAssignmentsGiven NegotiationAssignee[]  @relation("NegotiationAssignedBy")
   scheduledEmails             ScheduledEmail[]
+  apiTokens                   ApiToken[]
+}
+
+// ── MCP / personal API tokens ────────────────────────────────────────────────
+
+model ApiToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([userId])
 }
 
 model Group {

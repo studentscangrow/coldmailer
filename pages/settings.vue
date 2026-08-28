@@ -54,7 +54,7 @@ const isProjectManager = computed(() =>
 )
 
 // ── Sidebar navigation ────────────────────────────────────────────────────────
-type NavSection = 'permissions' | 'signatures' | 'users' | 'projects' | 'budget' | 'system' | 'team'
+type NavSection = 'permissions' | 'signatures' | 'api-tokens' | 'users' | 'projects' | 'budget' | 'system' | 'team'
 
 interface NavItem {
   id: NavSection
@@ -67,6 +67,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: 'permissions', label: 'Moje oprávnění', icon: 'shield' },
   { id: 'signatures',  label: 'Můj podpis',     icon: 'pen' },
+  { id: 'api-tokens',  label: 'MCP tokeny',     icon: 'tag' },
   { id: 'team',        label: 'Tým projektu',    icon: 'users', permission: 'manager' },
   { id: 'users',       label: 'Správa uživatelů', icon: 'users',  adminOnly: true },
   { id: 'projects',    label: 'Správa projektů',  icon: 'folder', adminOnly: true },
@@ -74,7 +75,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'system',      label: 'Systémová nastavení', icon: 'cog', adminOnly: true },
 ]
 
-const VALID_SECTIONS: NavSection[] = ['permissions', 'signatures', 'users', 'projects', 'budget', 'system', 'team']
+const VALID_SECTIONS: NavSection[] = ['permissions', 'signatures', 'api-tokens', 'users', 'projects', 'budget', 'system', 'team']
 const initialSection = VALID_SECTIONS.includes(route.query.tab as NavSection) ? (route.query.tab as NavSection) : 'permissions'
 const activeSection = ref<NavSection>(initialSection)
 
@@ -233,6 +234,10 @@ const visibleNav = computed(() =>
 
         <SettingsSignatures
           v-else-if="activeSection === 'signatures'"
+        />
+
+        <SettingsApiTokens
+          v-else-if="activeSection === 'api-tokens'"
         />
 
         <SettingsUsers

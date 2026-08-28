@@ -24,6 +24,7 @@
     "seed": "bun prisma/seed.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@prisma/client": "^5.22.0",
     "@tiptap/extension-highlight": "^3.23.6",
     "@tiptap/extension-placeholder": "^3.23.6",
@@ -35,12 +36,14 @@
     "nuxt": "^3.14.0",
     "nuxt-auth-utils": "^0.5.7",
     "openai": "^4.77.0",
-    "vue": "^3.5.12"
+    "vue": "^3.5.12",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@nuxtjs/google-fonts": "^3.2.0",
     "@nuxtjs/tailwindcss": "^6.12.2",
     "@types/dompurify": "^3.2.0",
+    "jsdom": "^30.0.1",
     "prisma": "^5.22.0",
     "typescript": "^5.6.3"
   }

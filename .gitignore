@@ -10,6 +10,7 @@ dist/
 # Env
 .env
 .env.local
+docker-compose.override.yml
 
 # AI
 .claude/worktrees/

@@ -84,6 +84,16 @@ export async function canEditNegotiation(userId: string, projectId: string, glob
   return isAssignedToNegotiation(userId, projectId, globalRecordId)
 }
 
+// userId-based equivalent of resolveInteractionAccess's 'edit' mode, for callers (MCP tools)
+// that already have a userId and no H3Event to run requireAuth against. Mirrors it exactly:
+// baseline canViewAll/isAdmin gate, then isAdmin/canEditAll/creator/assignee.
+export async function canEditInteractionRecord(userId: string, projectId: string, globalRecordId: string, createdBy: string): Promise<boolean> {
+  const access = await getInteractionAccess(userId, projectId)
+  if (!access.isAdmin && !access.canViewAll) return false
+  if (access.isAdmin || access.canEditAll || createdBy === userId) return true
+  return isAssignedToNegotiation(userId, projectId, globalRecordId)
+}
+
 async function resolveInteractionAccess(
   event: H3Event,
   record: { projectId: string; globalRecordId: string; createdBy: string; assignees: { userId: string }[] } | null,
