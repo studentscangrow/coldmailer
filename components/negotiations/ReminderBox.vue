@@ -9,6 +9,7 @@ const props = defineProps<{
   reminderTemplates: ReminderTemplate[]
   canEdit: boolean
   generating: boolean
+  emailCount: number
 }>()
 
 const emit = defineEmits<{ remind: [emailDraftId: string | null] }>()
@@ -39,7 +40,7 @@ watch(() => props.reminderTemplates, (tpls) => {
 </script>
 
 <template>
-  <div class="rounded-lg px-4 py-3 mb-6 flex flex-wrap items-center gap-x-4 gap-y-2" :class="colorClass">
+  <div v-if="emailCount < 3" class="rounded-lg px-4 py-3 mb-6 flex flex-wrap items-center gap-x-4 gap-y-2" :class="colorClass">
     <div class="text-xs font-medium">
       Poslední aktivita: <span class="font-semibold">{{ lastActivityLabel }}</span>
       <span class="opacity-70"> · {{ statusLabel }}</span>

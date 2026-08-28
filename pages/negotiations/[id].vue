@@ -151,6 +151,7 @@ const interactions = computed(() => interactionsData.value?.items ?? [])
 const crossProjectSummary = computed(() => interactionsData.value?.crossProjectSummary ?? [])
 const firstContact = computed(() => partner.value?.contacts[0] ?? null)
 const hasSentEmail = computed(() => interactions.value.some(i => i.type === 'EMAIL' && i.direction === 'SENT'))
+const emailCount = computed(() => interactions.value.filter(i => i.type === 'EMAIL').length)
 
 // ── Unknown contacts ─────────────────────────────────────────────────────────
 
@@ -562,6 +563,7 @@ const TYPE_LABELS: Record<string, string> = {
       :reminder-templates="reminderTemplates ?? []"
       :can-edit="canEdit"
       :generating="reminderGenerating"
+      :email-count="emailCount"
       @remind="onRemind"
     />
 
