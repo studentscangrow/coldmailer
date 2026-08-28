@@ -24,6 +24,8 @@ interface Partner {
   inProject: boolean
 }
 
+const CLOSED_STATUSES = new Set(['NOT_INTERESTED', 'NOT_THIS_TIME'])
+
 const search = ref('')
 const statusFilter = ref('')
 const dealConfidenceFilter = ref('')
@@ -150,8 +152,6 @@ function lastContact(p: Partner) {
   if (!p.lastInteractionAt) return null
   return new Date(p.lastInteractionAt).toLocaleDateString('cs-CZ')
 }
-
-const CLOSED_STATUSES = new Set(['NOT_INTERESTED', 'NOT_THIS_TIME'])
 
 function lastInteractionColor(p: Partner): string {
   if (isReadOnly(p)) return ''
