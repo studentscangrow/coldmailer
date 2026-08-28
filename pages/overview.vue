@@ -111,7 +111,7 @@ function fmtDate(d: string) {
           <template v-else>
             <template v-for="p in partners" :key="p.id">
               <tr class="hover:bg-gray-50 cursor-pointer transition-colors" @click="toggleExpand(p.id)">
-                <td class="px-4 py-3 text-center text-base" :title="p.dealConfidence === 'DOMLUVENO' ? 'Domluveno' : 'Možná'">
+                <td class="px-4 py-3 text-center text-base" :title="p.dealConfidence === 'DOMLUVENO' ? 'Bude!' : 'Možná'">
                   {{ p.dealConfidence === 'DOMLUVENO' ? '✅' : '❓' }}
                 </td>
                 <td class="px-4 py-3 font-medium text-gray-800">{{ p.canonicalName }}</td>

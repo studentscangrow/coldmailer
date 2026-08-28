@@ -33,6 +33,7 @@ export default defineEventHandler(async (event) => {
         where: negotiationWhere,
         select: {
           negotiationStatus: true,
+          dealConfidence: true,
           todoList: true,
           emails: { select: { sentAt: true, isRead: true }, orderBy: { sentAt: 'desc' } },
           notes: { select: { updatedAt: true }, orderBy: { updatedAt: 'desc' }, take: 1 },
@@ -80,6 +81,7 @@ export default defineEventHandler(async (event) => {
       nearestTaskText: nearest?.label ?? null,
       taskOverdue: nearest ? (todoUrgency(nearest.dueDate) === 'overdue' || todoUrgency(nearest.dueDate) === 'today') : false,
       negotiationStatus: negotiation?.negotiationStatus ?? null,
+      dealConfidence: negotiation?.dealConfidence ?? null,
       inProject: !!negotiation,
     }
   })

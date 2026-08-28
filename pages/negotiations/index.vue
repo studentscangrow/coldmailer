@@ -20,12 +20,14 @@ interface Partner {
   nearestTaskText: string | null
   taskOverdue: boolean
   negotiationStatus: string | null
+  dealConfidence: 'MOZNA' | 'DOMLUVENO' | null
   inProject: boolean
 }
 
 const search = ref('')
 const statusFilter = ref('')
-const showClosedStatuses = ref(true)
+const dealConfidenceFilter = ref('')
+const showClosedStatuses = ref(false)
 const { data: partnersData, pending, refresh: refreshPartners } = await useFetch<{ partners: Partner[]; canManageAll: boolean }>('/api/partners')
 const { data: meData } = await useFetch<{ user: { id: string; isAdmin: boolean } }>('/api/settings/me')
 
@@ -106,6 +108,9 @@ const sortedPartners = computed(() => {
   if (statusFilter.value) {
     filtered = filtered.filter(p => p.negotiationStatus === statusFilter.value)
   }
+  if (dealConfidenceFilter.value) {
+    filtered = filtered.filter(p => p.dealConfidence === dealConfidenceFilter.value)
+  }
   if (!showClosedStatuses.value) {
     filtered = filtered.filter(p => !CLOSED_STATUSES.has(p.negotiationStatus ?? ''))
   }
@@ -130,7 +135,7 @@ const pageSize = 25
 const totalPages = computed(() => Math.max(1, Math.ceil(sortedPartners.value.length / pageSize)))
 const pagedPartners = computed(() => sortedPartners.value.slice((page.value - 1) * pageSize, page.value * pageSize))
 
-watch([search, statusFilter, showClosedStatuses], () => { page.value = 1 })
+watch([search, statusFilter, dealConfidenceFilter, showClosedStatuses], () => { page.value = 1 })
 watch(totalPages, (tp) => { if (page.value > tp) page.value = tp })
 
 /** Vrátí true, pokud je partner READ-ONLY pro přihlášeného uživatele (není mu přiřazen, nebo je admin) */
@@ -200,6 +205,14 @@ function taskTooltip(p: Partner): string {
         <option value="">Všechny stavy</option>
         <option v-for="s in availableStatuses" :key="s" :value="s">{{ NEGOTIATION_STATUS_LABELS[s] ?? s }}</option>
       </select>
+      <select
+        v-model="dealConfidenceFilter"
+        class="text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-300 text-gray-600"
+      >
+        <option value="">Jistota jednání — vše</option>
+        <option value="DOMLUVENO">✅ Bude!</option>
+        <option value="MOZNA">❓ Možná</option>
+      </select>
 
       <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none ml-auto">
         Zobrazit Nezájem / Tentokrát nezájem
@@ -228,6 +241,7 @@ function taskTooltip(p: Partner): string {
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-gray-100 bg-gray-50 text-left">
+            <th class="px-4 py-3 w-8" title="Jistota jednání" />
             <th class="px-4 py-3 font-medium text-gray-500 text-xs cursor-pointer select-none hover:text-gray-700" @click="toggleSort('name')">
               Název<span v-if="sortKey === 'name'">{{ sortDir === 'asc' ? ' ▲' : ' ▼' }}</span>
             </th>
@@ -251,7 +265,7 @@ function taskTooltip(p: Partner): string {
         </thead>
         <tbody class="divide-y divide-gray-50">
           <tr v-if="pending">
-            <td colspan="6" class="py-12">
+            <td colspan="7" class="py-12">
               <div class="flex justify-center">
                 <svg class="w-5 h-5 animate-spin text-gray-300" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
@@ -261,8 +275,8 @@ function taskTooltip(p: Partner): string {
             </td>
           </tr>
           <tr v-else-if="!sortedPartners?.length">
-            <td colspan="6" class="text-center py-12 text-gray-400 text-sm">
-              {{ search || statusFilter ? 'Žádný partner nenalezen' : 'Zatím žádní oslovení partneři' }}
+            <td colspan="7" class="text-center py-12 text-gray-400 text-sm">
+              {{ search || statusFilter || dealConfidenceFilter ? 'Žádný partner nenalezen' : 'Zatím žádní oslovení partneři' }}
             </td>
           </tr>
           <tr
@@ -277,6 +291,10 @@ function taskTooltip(p: Partner): string {
             ]"
             @click="navigateTo(`/negotiations/${p.id}`)"
           >
+            <td class="px-4 py-3 text-center text-base" :title="p.dealConfidence === 'DOMLUVENO' ? 'Bude!' : p.dealConfidence === 'MOZNA' ? 'Možná' : ''">
+              <span v-if="p.dealConfidence">{{ p.dealConfidence === 'DOMLUVENO' ? '✅' : '❓' }}</span>
+              <span v-else class="text-gray-300">—</span>
+            </td>
             <td class="px-4 py-3 font-medium" :class="isReadOnly(p) ? 'text-gray-500' : 'text-gray-800'">
               <div class="flex items-center gap-2">
                 <span class="truncate max-w-56">{{ p.canonicalName }}</span>

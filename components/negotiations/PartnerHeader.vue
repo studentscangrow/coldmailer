@@ -254,12 +254,12 @@ async function saveDiscordUrl() {
           >
             <option value="">–</option>
             <option value="MOZNA">❓ Možná</option>
-            <option value="DOMLUVENO">✅ Domluveno</option>
+            <option value="DOMLUVENO">✅ Bude!</option>
           </select>
           <span
             v-else-if="partner.dealConfidence"
             :class="['text-xs px-2 py-1 rounded font-medium', partner.dealConfidence === 'DOMLUVENO' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700']"
-          >{{ partner.dealConfidence === 'DOMLUVENO' ? '✅ Domluveno' : '❓ Možná' }}</span>
+          >{{ partner.dealConfidence === 'DOMLUVENO' ? '✅ Bude!' : '❓ Možná' }}</span>
         </div>
         <!-- Discord vlákno -->
         <div class="flex items-center gap-1">

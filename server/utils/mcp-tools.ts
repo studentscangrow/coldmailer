@@ -214,7 +214,7 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
     'get_pipeline_overview',
     {
       title: 'Přehled pipeline',
-      description: 'Souhrnná čísla za projekt: počet partnerů/jednání, rozpad podle stavu jednání (syrový, bez interpretace "nadějnosti"), rozpad podle jistoty domluvy (dealConfidence — Domluveno/Možná/bez hodnoty), počet odeslaných e-mailů a nových poznámek od zadaného data.',
+      description: 'Souhrnná čísla za projekt: počet partnerů/jednání, rozpad podle stavu jednání (syrový, bez interpretace "nadějnosti"), rozpad podle jistoty domluvy (dealConfidence — Bude!/Možná/bez hodnoty), počet odeslaných e-mailů a nových poznámek od zadaného data.',
       inputSchema: {
         projectId: z.string(),
         since: z.string().datetime().optional().describe('ISO datum — pokud zadáno, počty e-mailů/poznámek se počítají jen od tohoto data.'),
