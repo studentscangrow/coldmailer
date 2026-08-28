@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { NEGOTIATION_STATUS_LABELS, NEGOTIATION_STATUS_COLORS } from '~/utils/negotiationStatus'
+import { PARTNER_RESEARCH_PROMPT } from '~/utils/researchPrompt'
 
 definePageMeta({ middleware: 'auth' })
 
@@ -174,6 +175,12 @@ function onImportSaved() {
 function onImportClose() {
   showImportModal.value = false
 }
+
+async function copyResearchPrompt() {
+  showNewDropdown.value = false
+  await navigator.clipboard.writeText(PARTNER_RESEARCH_PROMPT)
+  toast.show('Research prompt zkopírován do schránky', 'success')
+}
 </script>
 
 <template>
@@ -206,6 +213,10 @@ function onImportClose() {
             class="w-full text-left text-sm px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition-colors"
             @click="openTextImport()"
           >Vložit text</button>
+          <button
+            class="w-full text-left text-sm px-4 py-2.5 text-gray-700 hover:bg-gray-50 transition-colors border-t border-gray-100"
+            @click="copyResearchPrompt"
+          >Kopírovat research prompt</button>
         </div>
         <div v-show="showNewDropdown" class="fixed inset-0 z-10" @click="showNewDropdown = false" />
       </div>
@@ -367,7 +378,7 @@ function onImportClose() {
     </div>
 
     <PartnersPartnerFormModal v-if="showCreatePartnerModal" mode="create" @close="showCreatePartnerModal = false" @saved="onPartnerCreated" />
-    <PartnersPartnerFormModal v-if="editingPartner" mode="edit" :partner="editingPartner" @close="editingPartner = null" @saved="editingPartner = null; fetchRecords()" @deleted="editingPartner = null; fetchRecords()" />
+    <PartnersPartnerFormModal v-if="editingPartner" mode="edit" :partner="editingPartner" :can-delete="canManageAll" @close="editingPartner = null" @saved="editingPartner = null; fetchRecords()" @deleted="editingPartner = null; fetchRecords()" />
     <PartnersPartnerSearchAssign
       v-if="partnerToAssign"
       mode="choice"

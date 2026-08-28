@@ -39,6 +39,11 @@ Use the deployed URL instead of `localhost:3000` for a non-local instance.
   breakdown by `dealConfidence`, e-mails sent, new notes, optionally since a given date.
 - `get_activity_feed` — chronological e-mails/notes across all partners in a project since a
   given date. For one specific partner's full history, use `get_negotiation` instead.
+- `get_research_prompt` — returns the due-diligence deep-research prompt template used to
+  research a new partner candidate (the same one the "Kopírovat research prompt" button on
+  `/partners` copies). The app's own automatic deep research was removed (too expensive to run
+  on every candidate) — an agent capable of live web search can run this prompt itself and feed
+  the resulting JSON into `create_partner`; otherwise hand the prompt to the human.
 
 **Write** (all gated by the same permission checks as the app UI, all logged to the partner's
 `RecordEvent` history tagged `source: "mcp"` so agent-made changes are visible and traceable)
@@ -47,13 +52,31 @@ Use the deployed URL instead of `localhost:3000` for a non-local instance.
 - `update_todo` — To-Do checklist.
 - `update_negotiation_status` — stav jednání (cannot set `PRED_OSLOVENIM` — that's not a
   manually-settable state).
+- `create_partner` — new GlobalRecord (any authenticated user, matching the REST endpoint);
+  optionally joins it straight into a project's Oslovování queue via `projectId`.
+- `update_partner` — edits a partner's name/payload (merge semantics: a `null` value deletes
+  that key). Unrestricted like the REST endpoint it mirrors — any authenticated user can edit
+  any partner, there's no project scoping on a global record.
+- `delete_partner` — **admin or Vedení obchodu only** (in any project). Permanent, cascades
+  across every project's negotiation history for that partner. This is stricter than most tools
+  here on purpose — see below.
+- `assign_partner_to_project` — creates/reopens the Negotiation row for a project (Oslovování,
+  `PRED_OSLOVENIM`) and optionally sets outreach/negotiation assignees in the same call.
+  Admin/Vedení obchodu only.
+- `claim_outreach` / `unclaim_outreach` — self-assign/unassign as the outreach owner for a
+  partner. Only requires project membership (same as the REST claim/unclaim endpoints).
+- `assign_outreach` — assign (or clear, `userId: null`) the outreach owner to *any* user, not
+  just yourself. Admin/Vedení obchodu only.
 
 ## What's deliberately NOT exposed
 
-Sending e-mail (Gmail send), deleting anything, blacklist management, and GlobalRecord
-merge/duplicate resolution stay human-only actions in the app. These are either hard to undo or
-externally visible, so they're kept out of the agent's reach — see the comment at the top of
-`server/utils/mcp-tools.ts` before adding a tool for any of them.
+Sending e-mail (Gmail send), blacklist management, and GlobalRecord merge/duplicate resolution
+stay human-only actions in the app. These are either hard to undo or externally visible, so
+they're kept out of the agent's reach — see the comment at the top of `server/utils/mcp-tools.ts`
+before adding a tool for any of them. Partner deletion *is* exposed (above), gated behind
+`canManagePartnersGlobally` — fixing a real gap: the underlying REST endpoint used to allow any
+authenticated user to permanently delete any partner (`server/api/partners/[id].delete.ts` now
+enforces the same admin/Vedení obchodu check, not just the MCP tool).
 
 ## Rate limiting
 

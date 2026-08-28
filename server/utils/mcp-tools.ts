@@ -3,15 +3,21 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { prisma } from '~/server/utils/prisma'
 import { getUserScopeAccess } from '~/server/utils/permissions'
 import { getPartnerHeader, getNegotiationTimeline } from '~/server/utils/negotiation-detail'
-import { canEditNegotiation, canEditInteractionRecord } from '~/server/utils/projectPermissions'
+import { canEditNegotiation, canEditInteractionRecord, getInteractionAccess, canManagePartnersGlobally } from '~/server/utils/projectPermissions'
+import { upsertNegotiationAssignees } from '~/server/utils/negotiation-assignment'
+import { normalizeName } from '~/server/utils/deduplication'
 import { logEvent } from '~/server/utils/record-events'
 import { normalizeChecklist, normalizeTodo } from '~/utils/checklist'
 import { EDITABLE_NEGOTIATION_STATUSES } from '~/utils/negotiationStatus'
+import { PARTNER_RESEARCH_PROMPT } from '~/utils/researchPrompt'
 
-// Deliberately NOT exposed to MCP agents, even though the user holds edit rights: sending
-// email (Gmail send is a real, hard-to-undo external action), deleting anything, blacklist
-// management, and GlobalRecord merge/duplicate resolution. Keep those as human-only actions
-// in the app UI — don't add tools for them without revisiting that decision explicitly.
+// Deliberately NOT exposed to MCP agents, even though the user holds edit rights: sending email
+// (Gmail send is a real, hard-to-undo external action), blacklist management, and GlobalRecord
+// merge/duplicate resolution. Keep those as human-only actions in the app UI — don't add tools
+// for them without revisiting that decision explicitly. Partner deletion IS exposed (below),
+// gated behind canManagePartnersGlobally — the same restriction now also enforced by the REST
+// endpoint itself (server/api/partners/[id].delete.ts), since it used to allow any authenticated
+// user to permanently delete any partner across every project.
 
 export interface McpToolContext {
   userId: string
@@ -269,6 +275,16 @@ export function registerReadTools(server: McpServer, ctx: McpToolContext) {
       return textResult(items)
     },
   )
+
+  server.registerTool(
+    'get_research_prompt',
+    {
+      title: 'Deep-research prompt pro nového partnera',
+      description: 'Vrátí prompt šablonu pro hloubkový due-diligence průzkum potenciálního partnera (web, LinkedIn, kontakty, doklady o partnerství, ...). Appka už vlastní automatický deep research nemá (bylo to drahé) — pokud umíš dělat skutečné živé vyhledávání na webu, spusť si tento prompt sám na jméno kandidáta a výsledný JSON předej nástroji create_partner. Pokud web search nemáš, vrať prompt uživateli, ať ho spustí v nástroji, který live search má, a vrátí ti výsledek.',
+      inputSchema: {},
+    },
+    async () => textResult({ prompt: PARTNER_RESEARCH_PROMPT }),
+  )
 }
 
 // Write tools all gate on the exact same permission functions the corresponding REST
@@ -434,6 +450,281 @@ export function registerWriteTools(server: McpServer, ctx: McpToolContext) {
 
       await logEvent({ globalRecordId, userId: ctx.userId, eventType: 'MCP_STATUS_UPDATED', metadata: { projectId, negotiationStatus, source: 'mcp' } })
       return textResult({ negotiationStatus })
+    },
+  )
+
+  server.registerTool(
+    'create_partner',
+    {
+      title: 'Vytvořit partnera',
+      description: 'Vytvoří nového partnera (GlobalRecord typu PARTNER). Payload má stejnou strukturu jako výstup get_research_prompt. Volitelně ho rovnou přidá do projektu (Oslovování, stav PRED_OSLOVENIM) — viz projectId/assigneeIds.',
+      inputSchema: {
+        canonicalName: z.string(),
+        payload: z.record(z.string(), z.any()).optional().describe('website, industry, size, summary, contacts: [{firstName,lastName,role,email,type,priority,note}], ...'),
+        projectId: z.string().optional().describe('Pokud zadán, partner se rovnou přidá do tohoto projektu.'),
+        assigneeIds: z.array(z.string()).optional().describe('Kdo je přiřazen jako plnitel při přidání do projektu (jen s projectId). Bez oprávnění edit_all/admin se volající vždy přidá sám.'),
+      },
+    },
+    async ({ canonicalName, payload, projectId, assigneeIds }) => {
+      const name = canonicalName.trim()
+      if (!name) return errorResult('Název partnera je povinný.')
+
+      const normalized = normalizeName(name)
+      const existing = await prisma.globalRecord.findUnique({ where: { normalizedName_type: { normalizedName: normalized, type: 'PARTNER' } } })
+      if (existing) return errorResult(`Partner "${existing.canonicalName}" už existuje (id: ${existing.id}).`)
+
+      if (projectId) await assertProjectAccess(ctx, projectId)
+
+      const record = await prisma.globalRecord.create({
+        data: { type: 'PARTNER', canonicalName: name, normalizedName: normalized, payload: (payload ?? {}) as any, createdBy: ctx.userId },
+      })
+      await logEvent({ globalRecordId: record.id, userId: ctx.userId, eventType: 'MANUAL_CREATE', metadata: { source: 'mcp' } })
+
+      const contacts = Array.isArray((payload as any)?.contacts) ? (payload as any).contacts : []
+      for (const c of contacts) {
+        const address = c.email?.trim() ? c.email.trim().toLowerCase() : null
+        await prisma.partnerContact.create({
+          data: {
+            globalRecordId: record.id, address,
+            label: [c.firstName, c.lastName].filter(Boolean).join(' ') || null,
+            firstName: c.firstName || null, lastName: c.lastName || null,
+            role: c.role || null, contactType: c.type || null,
+            priority: c.priority ?? 3, note: c.note || null,
+          },
+        }).catch((e: any) => { if (e?.code !== 'P2002') throw e })
+      }
+
+      let negotiationCreated = false
+      if (projectId) {
+        const access = await getInteractionAccess(ctx.userId, projectId)
+        const finalAssigneeIds = [...(assigneeIds ?? [])]
+        if (!access.canEditAll && !access.isAdmin && !finalAssigneeIds.includes(ctx.userId)) finalAssigneeIds.push(ctx.userId)
+        const negotiation = await prisma.negotiation.create({ data: { globalRecordId: record.id, projectId, negotiationStatus: 'PRED_OSLOVENIM' } })
+        negotiationCreated = true
+        if (finalAssigneeIds.length > 0) {
+          await prisma.fulfillmentAssignee.createMany({ data: finalAssigneeIds.map(userId => ({ negotiationId: negotiation.id, userId })), skipDuplicates: true })
+        }
+      }
+
+      return textResult({ id: record.id, canonicalName: record.canonicalName, negotiationCreated })
+    },
+  )
+
+  server.registerTool(
+    'update_partner',
+    {
+      title: 'Upravit partnera',
+      description: 'Upraví název a/nebo profilová data (payload) existujícího partnera. payload se mergne do stávajícího (klíč s hodnotou null se smaže, jinak se přepíše/přidá) — stejně jako editor na /partners. Bez projektového omezení (partner je globální záznam), stejně jako v appce.',
+      inputSchema: {
+        globalRecordId: z.string(),
+        canonicalName: z.string().optional(),
+        payload: z.record(z.string(), z.any().nullable()).optional(),
+      },
+    },
+    async ({ globalRecordId, canonicalName, payload }) => {
+      const existing = await prisma.globalRecord.findUnique({ where: { id: globalRecordId } })
+      if (!existing) return errorResult('Partner nenalezen.')
+      if (existing.type !== 'PARTNER') return errorResult('Záznam není typu PARTNER.')
+
+      const nameUpdate: Record<string, string> = {}
+      if (canonicalName?.trim()) {
+        nameUpdate.canonicalName = canonicalName.trim()
+        nameUpdate.normalizedName = normalizeName(nameUpdate.canonicalName)
+      }
+
+      let payloadUpdate: { payload?: any } = {}
+      if (payload) {
+        const merged = { ...(existing.payload as Record<string, unknown>) }
+        for (const [key, value] of Object.entries(payload)) {
+          if (value === null) delete merged[key]
+          else merged[key] = value
+        }
+        payloadUpdate = { payload: merged }
+      }
+
+      const updated = await prisma.globalRecord.update({
+        where: { id: globalRecordId },
+        data: { ...nameUpdate, ...payloadUpdate },
+        select: { id: true, canonicalName: true, payload: true },
+      }).catch((e: any) => {
+        if (e?.code === 'P2002') throw new Error('Partner s tímto názvem už existuje.')
+        throw e
+      })
+
+      await logEvent({ globalRecordId, userId: ctx.userId, eventType: 'MANUAL_EDIT', metadata: { source: 'mcp' } })
+
+      if (Array.isArray((payload as any)?.contacts)) {
+        const { syncProfileContactsToDb } = await import('~/server/utils/sync-contacts')
+        await syncProfileContactsToDb(globalRecordId, (payload as any).contacts)
+      }
+
+      return textResult(updated)
+    },
+  )
+
+  server.registerTool(
+    'delete_partner',
+    {
+      title: 'Smazat partnera',
+      description: 'Trvale smaže partnera (GlobalRecord) včetně veškeré historie jednání napříč všemi projekty. Nevratné. Dostupné jen pro admina nebo Vedení obchodu (v libovolném projektu) — přísnější než ostatní partner nástroje.',
+      inputSchema: {
+        globalRecordId: z.string(),
+      },
+    },
+    async ({ globalRecordId }) => {
+      if (!(await canManagePartnersGlobally(ctx.userId))) {
+        return errorResult('Smazání partnera je dostupné jen pro vedení obchodu a administrátory.')
+      }
+      const existing = await prisma.globalRecord.findUnique({ where: { id: globalRecordId }, select: { id: true, type: true, canonicalName: true } })
+      if (!existing) return errorResult('Partner nenalezen.')
+      if (existing.type !== 'PARTNER') return errorResult('Záznam není typu PARTNER.')
+
+      await prisma.$transaction([
+        prisma.recordEvent.deleteMany({ where: { globalRecordId } }),
+        prisma.partnerContact.deleteMany({ where: { globalRecordId } }),
+        prisma.globalRecord.delete({ where: { id: globalRecordId } }),
+      ])
+
+      return textResult({ deleted: true, canonicalName: existing.canonicalName })
+    },
+  )
+
+  server.registerTool(
+    'assign_partner_to_project',
+    {
+      title: 'Přidat partnera do projektu (Oslovování)',
+      description: 'Zajistí, že je partner vidět v Oslovování/Jednání daného projektu (vytvoří Negotiation řádek se stavem PRED_OSLOVENIM, pokud ještě neexistuje). purpose "outreach" (výchozí) nastaví jednoho zodpovědného za oslovení (max 1 assigneeId); "negotiation" přidá vyjednavače (může jich být víc) a posune stav na V_JEDNANI. Dostupné jen pro admina nebo Vedení obchodu v daném projektu.',
+      inputSchema: {
+        projectId: z.string(),
+        globalRecordId: z.string(),
+        purpose: z.enum(['outreach', 'negotiation']).default('outreach'),
+        assigneeIds: z.array(z.string()).optional(),
+      },
+    },
+    async ({ projectId, globalRecordId, purpose, assigneeIds }) => {
+      await assertProjectAccess(ctx, projectId)
+      const access = await getInteractionAccess(ctx.userId, projectId)
+      if (!access.isAdmin && !access.canEditAll) {
+        return errorResult('Nemáte oprávnění přidávat partnery do projektu. Vyžaduje admina nebo Vedení obchodu.')
+      }
+
+      const ids = assigneeIds ?? []
+      if (purpose === 'outreach' && ids.length > 1) {
+        return errorResult('Oslovování podporuje jen jednoho přiřazeného.')
+      }
+
+      const negotiation = await prisma.negotiation.upsert({
+        where: { projectId_globalRecordId: { projectId, globalRecordId } },
+        create: { projectId, globalRecordId, manuallyAddedAt: new Date(), negotiationStatus: 'PRED_OSLOVENIM' },
+        update: { removedAt: null, manuallyAddedAt: new Date() },
+      })
+
+      if (ids.length > 0) {
+        await prisma.fulfillmentAssignee.createMany({ data: ids.map(userId => ({ negotiationId: negotiation.id, userId })), skipDuplicates: true })
+      }
+
+      if (purpose === 'negotiation') {
+        await upsertNegotiationAssignees(projectId, globalRecordId, ids, ctx.userId)
+        if (ids.length === 0) {
+          await prisma.negotiation.updateMany({
+            where: { projectId, globalRecordId, OR: [{ negotiationStatus: null }, { negotiationStatus: 'PRED_OSLOVENIM' }] },
+            data: { negotiationStatus: 'V_JEDNANI' },
+          })
+        }
+      } else if (ids.length === 1) {
+        await prisma.outreachAssignment.upsert({
+          where: { projectId_globalRecordId_assigneeId: { projectId, globalRecordId, assigneeId: ids[0] } },
+          create: { projectId, globalRecordId, assigneeId: ids[0], assignedById: ctx.userId },
+          update: {},
+        })
+      }
+
+      await logEvent({ globalRecordId, userId: ctx.userId, eventType: 'MCP_ASSIGNED_TO_PROJECT', metadata: { projectId, purpose, source: 'mcp' } })
+      return textResult({ negotiationId: negotiation.id, negotiationStatus: negotiation.negotiationStatus })
+    },
+  )
+
+  server.registerTool(
+    'claim_outreach',
+    {
+      title: 'Vzít si oslovení partnera',
+      description: 'Přiřadí VOLAJÍCÍHO uživatele jako zodpovědného za oslovení partnera v projektu (Oslovování). Funguje jen pokud partner ještě nemá jiného řešitele. Vyžaduje jen členství v projektu (na rozdíl od assign_outreach, které umí přiřadit kohokoli).',
+      inputSchema: {
+        projectId: z.string(),
+        globalRecordId: z.string(),
+      },
+    },
+    async ({ projectId, globalRecordId }) => {
+      await assertProjectAccess(ctx, projectId)
+
+      const existing = await prisma.outreachAssignment.findFirst({ where: { projectId, globalRecordId }, select: { assigneeId: true } })
+      if (existing && existing.assigneeId !== ctx.userId) {
+        return errorResult('Partner už má přiřazeného jiného řešitele oslovení.')
+      }
+
+      await prisma.outreachAssignment.upsert({
+        where: { projectId_globalRecordId_assigneeId: { projectId, globalRecordId, assigneeId: ctx.userId } },
+        create: { projectId, globalRecordId, assigneeId: ctx.userId, assignedById: ctx.userId },
+        update: {},
+      })
+
+      return textResult({ claimed: true })
+    },
+  )
+
+  server.registerTool(
+    'unclaim_outreach',
+    {
+      title: 'Vzdát se oslovení partnera',
+      description: 'Odebere VOLAJÍCÍHO uživatele jako zodpovědného za oslovení partnera (musí to být oni sami, kdo je aktuálně přiřazen).',
+      inputSchema: {
+        projectId: z.string(),
+        globalRecordId: z.string(),
+      },
+    },
+    async ({ projectId, globalRecordId }) => {
+      await assertProjectAccess(ctx, projectId)
+
+      const assignment = await prisma.outreachAssignment.findFirst({ where: { projectId, globalRecordId, assigneeId: ctx.userId }, select: { id: true } })
+      if (!assignment) return errorResult('Nejste přiřazeni k tomuto partnerovi.')
+
+      await prisma.outreachAssignment.deleteMany({ where: { projectId, globalRecordId, assigneeId: ctx.userId } })
+      return textResult({ unclaimed: true })
+    },
+  )
+
+  server.registerTool(
+    'assign_outreach',
+    {
+      title: 'Přiřadit oslovení konkrétnímu uživateli',
+      description: 'Přiřadí (nebo odebere, userId: null) zodpovědnost za oslovení partnera libovolnému uživateli — na rozdíl od claim_outreach nejde jen o sebe. Nahrazuje předchozí přiřazení (Oslovování má vždy max. jednoho zodpovědného). Dostupné jen pro admina nebo Vedení obchodu.',
+      inputSchema: {
+        projectId: z.string(),
+        globalRecordId: z.string(),
+        userId: z.string().nullable(),
+      },
+    },
+    async ({ projectId, globalRecordId, userId }) => {
+      await assertProjectAccess(ctx, projectId)
+      const access = await getInteractionAccess(ctx.userId, projectId)
+      if (!access.isAdmin && !access.canEditAll) {
+        return errorResult('Nemáte oprávnění přiřazovat partnery. Vyžaduje admina nebo Vedení obchodu.')
+      }
+
+      if (userId === null) {
+        await prisma.outreachAssignment.deleteMany({ where: { projectId, globalRecordId } })
+        return textResult({ assignment: null })
+      }
+
+      const targetUser = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true } })
+      if (!targetUser) return errorResult('Uživatel nebyl nalezen.')
+
+      await prisma.outreachAssignment.deleteMany({ where: { projectId, globalRecordId } })
+      await prisma.outreachAssignment.create({
+        data: { projectId, globalRecordId, assigneeId: userId, assignedById: ctx.userId },
+      })
+
+      return textResult({ assignment: { assigneeId: targetUser.id, assigneeName: targetUser.name } })
     },
   )
 }
