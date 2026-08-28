@@ -25,6 +25,7 @@ interface Partner {
 
 const search = ref('')
 const statusFilter = ref('')
+const showClosedStatuses = ref(true)
 const { data: partnersData, pending, refresh: refreshPartners } = await useFetch<{ partners: Partner[]; canManageAll: boolean }>('/api/partners')
 const { data: meData } = await useFetch<{ user: { id: string; isAdmin: boolean } }>('/api/settings/me')
 
@@ -105,6 +106,9 @@ const sortedPartners = computed(() => {
   if (statusFilter.value) {
     filtered = filtered.filter(p => p.negotiationStatus === statusFilter.value)
   }
+  if (!showClosedStatuses.value) {
+    filtered = filtered.filter(p => !CLOSED_STATUSES.has(p.negotiationStatus ?? ''))
+  }
 
   if (sortKey.value) {
     return sortByColumn(filtered, sortKey.value, sortDir.value)
@@ -126,7 +130,7 @@ const pageSize = 25
 const totalPages = computed(() => Math.max(1, Math.ceil(sortedPartners.value.length / pageSize)))
 const pagedPartners = computed(() => sortedPartners.value.slice((page.value - 1) * pageSize, page.value * pageSize))
 
-watch([search, statusFilter], () => { page.value = 1 })
+watch([search, statusFilter, showClosedStatuses], () => { page.value = 1 })
 watch(totalPages, (tp) => { if (page.value > tp) page.value = tp })
 
 /** Vrátí true, pokud je partner READ-ONLY pro přihlášeného uživatele (není mu přiřazen, nebo je admin) */
@@ -196,6 +200,26 @@ function taskTooltip(p: Partner): string {
         <option value="">Všechny stavy</option>
         <option v-for="s in availableStatuses" :key="s" :value="s">{{ NEGOTIATION_STATUS_LABELS[s] ?? s }}</option>
       </select>
+
+      <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none ml-auto">
+        Zobrazit Nezájem / Tentokrát nezájem
+        <button
+          :class="[
+            'relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 cursor-pointer',
+            showClosedStatuses ? 'bg-indigo-600' : 'bg-gray-200',
+          ]"
+          role="switch"
+          :aria-checked="showClosedStatuses"
+          @click="showClosedStatuses = !showClosedStatuses"
+        >
+          <span
+            :class="[
+              'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200',
+              showClosedStatuses ? 'translate-x-4' : 'translate-x-0',
+            ]"
+          />
+        </button>
+      </label>
     </div>
 
     <PartnersPartnerSearchAssign v-if="showAssignModal" mode="negotiation" @close="showAssignModal = false" @assigned="onPartnerAdded" />
