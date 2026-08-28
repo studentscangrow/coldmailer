@@ -66,6 +66,7 @@ interface Partner {
   assignees: AssigneeUser[]
   negotiationStatus: 'CONTACTED' | 'REMINDED' | 'WAITING_FOR_THEM' | 'WAITING_FOR_US' | 'PRED_SCHUZKOU' | 'FULFILLING' | 'THANKS_REMAINING' | 'COMPLETED' | 'NOT_INTERESTED' | 'NOT_THIS_TIME' | null
   discordThreadUrl: string | null
+  dealConfidence: 'MOZNA' | 'DOMLUVENO' | null
 }
 interface AppUser { id: string; name: string; image: string | null; email: string }
 

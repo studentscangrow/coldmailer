@@ -14,7 +14,10 @@ interface Partner {
   assignees: AssigneeUser[]
   negotiationStatus: 'CONTACTED' | 'REMINDED' | 'WAITING_FOR_THEM' | 'WAITING_FOR_US' | 'PRED_SCHUZKOU' | 'FULFILLING' | 'THANKS_REMAINING' | 'COMPLETED' | 'NOT_INTERESTED' | 'NOT_THIS_TIME' | null
   discordThreadUrl: string | null
+  dealConfidence: 'MOZNA' | 'DOMLUVENO' | null
 }
+
+const CLOSED_STATUSES = new Set(['NOT_INTERESTED', 'NOT_THIS_TIME'])
 
 const props = defineProps<{
   globalRecordId: string
@@ -92,6 +95,27 @@ async function updateStatus(value: string | null) {
 const negotiationStatusModel = computed({
   get: () => props.partner.negotiationStatus ?? '',
   set: (value: string) => { updateStatus(value || null) },
+})
+
+// ── Deal confidence ("Domluveno" / "Možná") ────────────────────────────────────
+// Nezávislé na negotiationStatus, ale nedává smysl u uzavřeného jednání (Nezájem /
+// Tentokrát nezájem) — select je pak disabled a hodnota se vrací na "–" (server to
+// navíc vynuluje sám při přechodu do uzavřeného stavu, viz status.patch.ts).
+
+const dealConfidenceDisabled = computed(() => CLOSED_STATUSES.has(props.partner.negotiationStatus ?? ''))
+
+async function updateDealConfidence(value: string | null) {
+  await $fetch(`/api/partners/${props.globalRecordId}/status`, {
+    method: 'PATCH',
+    body: { dealConfidence: value },
+  })
+  toast.show('Jistota domluvy aktualizována', 'success')
+  emit('partner-changed')
+}
+
+const dealConfidenceModel = computed({
+  get: () => (dealConfidenceDisabled.value ? '' : props.partner.dealConfidence ?? ''),
+  set: (value: string) => { updateDealConfidence(value || null) },
 })
 
 // ── Solution assignees ───────────────────────────────────────────────────────
@@ -207,9 +231,8 @@ async function saveDiscordUrl() {
             >Synchronizovat {{ syncLookbackDays }} dní zpět</button>
           </div>
         </div>
-        <!-- Stav jednání inline vedle tlačítek -->
+        <!-- Stav jednání + jistota domluvy, inline vedle tlačítek -->
         <div v-if="canEdit || partner.negotiationStatus" class="flex items-center gap-1.5">
-          <span class="text-xs text-gray-400 font-medium whitespace-nowrap">Stav:</span>
           <select
             v-if="canEdit"
             v-model="negotiationStatusModel"
@@ -222,6 +245,21 @@ async function saveDiscordUrl() {
             v-else-if="partner.negotiationStatus"
             :class="['text-xs px-2 py-1 rounded font-medium', NEGOTIATION_STATUS_COLORS[partner.negotiationStatus] ?? 'bg-gray-100 text-gray-600']"
           >{{ NEGOTIATION_STATUS_LABELS[partner.negotiationStatus] }}</span>
+
+          <select
+            v-if="canEdit"
+            v-model="dealConfidenceModel"
+            :disabled="dealConfidenceDisabled"
+            class="text-xs px-2 py-1.5 border border-gray-200 rounded-lg text-gray-700 focus:outline-none focus:border-indigo-300 bg-white disabled:bg-gray-50 disabled:text-gray-300 disabled:cursor-not-allowed"
+          >
+            <option value="">–</option>
+            <option value="MOZNA">❓ Možná</option>
+            <option value="DOMLUVENO">✅ Domluveno</option>
+          </select>
+          <span
+            v-else-if="partner.dealConfidence"
+            :class="['text-xs px-2 py-1 rounded font-medium', partner.dealConfidence === 'DOMLUVENO' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700']"
+          >{{ partner.dealConfidence === 'DOMLUVENO' ? '✅ Domluveno' : '❓ Možná' }}</span>
         </div>
         <!-- Discord vlákno -->
         <div class="flex items-center gap-1">

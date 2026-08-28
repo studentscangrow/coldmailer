@@ -363,6 +363,13 @@ enum NegotiationStatus {
   NOT_THIS_TIME
 }
 
+// Jistota domluvy spolupráce — nezávislé na NegotiationStatus, nastavuje se ručně.
+// Vždy null, pokud je NegotiationStatus NOT_INTERESTED/NOT_THIS_TIME (viz status.patch.ts).
+enum DealConfidence {
+  MOZNA
+  DOMLUVENO
+}
+
 model Email {
   id            String        @id @default(cuid())
   negotiationId String
@@ -480,6 +487,7 @@ model Negotiation {
   globalRecord   GlobalRecord @relation(fields: [globalRecordId], references: [id], onDelete: Cascade)
 
   negotiationStatus NegotiationStatus?
+  dealConfidence    DealConfidence?
   emailDisplayMode  String             @default("text")
   autoIncludeDomain Boolean? // null = auto-detect from contacts; true/false = explicit user override
   domainOverride    String? // ručně zadaná outmatch doména; má přednost před auto-detekcí

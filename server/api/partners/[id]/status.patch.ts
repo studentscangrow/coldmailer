@@ -15,7 +15,8 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event)
-  const { negotiationStatus, addAssigneeId, removeAssigneeId } = body
+  const { negotiationStatus, dealConfidence, addAssigneeId, removeAssigneeId } = body
+  const CLOSED_STATUSES = ['NOT_INTERESTED', 'NOT_THIS_TIME']
 
   if (negotiationStatus !== undefined) {
     if (negotiationStatus === 'PRED_OSLOVENIM') {
@@ -25,10 +26,37 @@ export default defineEventHandler(async (event) => {
     if (!canEdit) {
       throw createError({ statusCode: 403, message: 'Nemáte oprávnění editovat stav tohoto partnera. Nejste přiřazeni k tomuto partnerovi.' })
     }
+    // Nezájem / Tentokrát nezájem vždy vynuluje dealConfidence — nedává smysl mít "Domluveno"/"Možná" u uzavřeného jednání.
+    const closesDeal = CLOSED_STATUSES.includes(negotiationStatus)
     await prisma.negotiation.upsert({
       where: { projectId_globalRecordId: { projectId, globalRecordId } },
-      create: { projectId, globalRecordId, negotiationStatus },
-      update: { negotiationStatus },
+      create: { projectId, globalRecordId, negotiationStatus, ...(closesDeal && { dealConfidence: null }) },
+      update: { negotiationStatus, ...(closesDeal && { dealConfidence: null }) },
+    })
+  }
+
+  if (dealConfidence !== undefined) {
+    if (dealConfidence !== null && dealConfidence !== 'MOZNA' && dealConfidence !== 'DOMLUVENO') {
+      throw createError({ statusCode: 400, message: 'Neplatná hodnota jistoty domluvy.' })
+    }
+    const canEdit = await canEditNegotiation(session.id, projectId, globalRecordId)
+    if (!canEdit) {
+      throw createError({ statusCode: 403, message: 'Nemáte oprávnění editovat toto jednání. Nejste přiřazeni k tomuto partnerovi.' })
+    }
+    // Server-side pojistka nad rámec disabled selectu v UI: nedovolit nastavit dealConfidence,
+    // pokud je (nebo právě bude) stav Nezájem / Tentokrát nezájem.
+    const current = await prisma.negotiation.findUnique({
+      where: { projectId_globalRecordId: { projectId, globalRecordId } },
+      select: { negotiationStatus: true },
+    })
+    const effectiveStatus = negotiationStatus !== undefined ? negotiationStatus : current?.negotiationStatus
+    if (dealConfidence !== null && effectiveStatus && CLOSED_STATUSES.includes(effectiveStatus)) {
+      throw createError({ statusCode: 400, message: 'U stavu Nezájem / Tentokrát nezájem nelze nastavit jistotu domluvy.' })
+    }
+    await prisma.negotiation.upsert({
+      where: { projectId_globalRecordId: { projectId, globalRecordId } },
+      create: { projectId, globalRecordId, dealConfidence },
+      update: { dealConfidence },
     })
   }
 

@@ -33,6 +33,15 @@ export async function getProjectPermissions(userId: string, projectId: string): 
   return [...new Set(assignments.flatMap(a => a.projectRole.permissions))]
 }
 
+// True for admins and users with the "Vedení obchodu" role (project.pipeline.manage) in this
+// project — gates the /overview (Přehled) page and its data endpoint.
+export async function canManagePipeline(userId: string, projectId: string): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { isAdmin: true } })
+  if (user?.isAdmin) return true
+  const perms = await getProjectPermissions(userId, projectId)
+  return perms.includes('project.pipeline.manage')
+}
+
 export async function getInteractionAccess(userId: string, projectId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },

@@ -2,6 +2,18 @@
 const { user, loggedIn, clear } = useUserSession()
 const { groups, activeProject, activeGroup, setProject } = useActiveProject()
 
+// "Přehled" is only for admins and users with the "Vedení obchodu" role
+// (project.pipeline.manage) in the currently active project.
+interface MeProjectRole { permissions: string[]; project: { id: string } }
+const { data: me } = useFetch<{ user: { isAdmin: boolean }; projectRoles: MeProjectRole[] }>('/api/settings/me', {
+  key: 'me-for-nav',
+})
+const canSeeOverview = computed(() => {
+  if (!me.value || !activeProject.value) return false
+  if (me.value.user.isAdmin) return true
+  return me.value.projectRoles.some(r => r.project.id === activeProject.value!.id && r.permissions.includes('project.pipeline.manage'))
+})
+
 // `/negotiations` and `/outreach` each have a sibling `[id].vue` detail page with
 // no shared parent route, so Vue Router's built-in active-class matching doesn't
 // consider the detail page "active" for the list-page NuxtLink — check manually.
@@ -160,6 +172,14 @@ async function logout() {
             :class="isNavActive('/negotiations') ? 'text-gray-800 font-medium' : 'text-gray-500 hover:text-gray-800'"
           >
             Jednání
+          </NuxtLink>
+          <NuxtLink
+            v-if="canSeeOverview"
+            to="/overview"
+            class="text-sm text-gray-500 hover:text-gray-800 transition-colors"
+            active-class="text-gray-800 font-medium"
+          >
+            Přehled
           </NuxtLink>
           <NuxtLink
             to="/library"

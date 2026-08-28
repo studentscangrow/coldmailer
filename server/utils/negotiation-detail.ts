@@ -55,7 +55,7 @@ export async function getPartnerHeader(globalRecordId: string, projectId: string
       },
       negotiations: {
         where: projectId ? { projectId } : undefined,
-        select: { negotiationStatus: true, discordThreadUrl: true },
+        select: { negotiationStatus: true, discordThreadUrl: true, dealConfidence: true },
       },
     },
   })
@@ -71,6 +71,7 @@ export async function getPartnerHeader(globalRecordId: string, projectId: string
     ...rest,
     negotiationStatus: negotiation?.negotiationStatus ?? null,
     discordThreadUrl: negotiation?.discordThreadUrl ?? null,
+    dealConfidence: negotiation?.dealConfidence ?? null,
     assignees,
     outreachAssignment,
   }
