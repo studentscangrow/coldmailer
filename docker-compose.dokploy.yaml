@@ -13,7 +13,9 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - internal
+      internal:
+        aliases:
+          - coldmailer-db
     restart: unless-stopped
 
   app:
@@ -25,7 +27,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql://coldmailer:coldmailer@db:5432/coldmailer
+      DATABASE_URL: postgresql://coldmailer:coldmailer@coldmailer-db:5432/coldmailer
       NODE_ENV: production
     depends_on:
       db:
